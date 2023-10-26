@@ -1,4 +1,4 @@
-Druid exact distinct count aggregator:
+# Druid exact distinct count aggregator
 
 Provides a more reliable and efficient way to count the number of unique values in a column than existent approximate aggregators.
 
