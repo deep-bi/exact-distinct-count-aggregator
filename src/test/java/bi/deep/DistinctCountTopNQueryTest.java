@@ -119,7 +119,7 @@ public class DistinctCountTopNQueryTest extends InitializedNullHandlingTest {
                 .threshold(10)
                 .aggregators(
                         QueryRunnerTestHelper.ROWS_COUNT,
-                        new ExactDistinctCountAggregatorFactory("UV", visitor_id, 1000)
+                        new ExactDistinctCountAggregatorFactory("UV", visitor_id, 1000, false)
                 )
                 .build();
 

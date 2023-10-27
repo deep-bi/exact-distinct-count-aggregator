@@ -96,7 +96,7 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
                                   .aggregators(
                                       Lists.newArrayList(
                                           QueryRunnerTestHelper.ROWS_COUNT,
-                                          new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2)
+                                          new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2, true)
                                       )
                                   )
                                   .build();
@@ -104,22 +104,48 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
       Assert.assertThrows(RuntimeException.class, () -> engine.process(queryToFail, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList());
 
 
-    TimeseriesQuery query = Druids.newTimeseriesQueryBuilder()
+    TimeseriesQuery partialQuery = Druids.newTimeseriesQueryBuilder()
                                   .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
                                   .granularity(QueryRunnerTestHelper.ALL_GRAN)
                                   .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
                                   .aggregators(
                                       Lists.newArrayList(
                                           QueryRunnerTestHelper.ROWS_COUNT,
-                                          new ExactDistinctCountAggregatorFactory("UV", visitor_id, 3)
+                                          new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2, false)
                                       )
                                   )
                                   .build();
 
     final Iterable<Result<TimeseriesResultValue>> results =
-        engine.process(query, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
+        engine.process(partialQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
 
     List<Result<TimeseriesResultValue>> expectedResults = Collections.singletonList(
+        new Result<>(
+            time,
+            new TimeseriesResultValue(
+                ImmutableMap.of("UV", 2, "rows", 3L)
+            )
+        )
+    );
+    TestHelper.assertExpectedResults(expectedResults, results);
+
+
+    TimeseriesQuery fullQuery = Druids.newTimeseriesQueryBuilder()
+                                  .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
+                                  .granularity(QueryRunnerTestHelper.ALL_GRAN)
+                                  .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
+                                  .aggregators(
+                                      Lists.newArrayList(
+                                          QueryRunnerTestHelper.ROWS_COUNT,
+                                          new ExactDistinctCountAggregatorFactory("UV", visitor_id, 3, true)
+                                      )
+                                  )
+                                  .build();
+
+    final Iterable<Result<TimeseriesResultValue>> fullResults =
+        engine.process(fullQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
+
+    List<Result<TimeseriesResultValue>> fullExpectedResults = Collections.singletonList(
         new Result<>(
             time,
             new TimeseriesResultValue(
@@ -127,6 +153,6 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
             )
         )
     );
-    TestHelper.assertExpectedResults(expectedResults, results);
+    TestHelper.assertExpectedResults(fullExpectedResults, fullResults);
   }
 }
