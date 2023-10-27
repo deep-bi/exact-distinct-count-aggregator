@@ -121,7 +121,7 @@ public class DistinctCountGroupByQueryTest extends InitializedNullHandlingTest {
                                 10
                         )
                 )
-                .setAggregatorSpecs(QueryRunnerTestHelper.ROWS_COUNT, new ExactDistinctCountAggregatorFactory("UV", visitor_id, 1000))
+                .setAggregatorSpecs(QueryRunnerTestHelper.ROWS_COUNT, new ExactDistinctCountAggregatorFactory("UV", visitor_id, 1000, true))
                 .build();
         final Segment incrementalIndexSegment = new IncrementalIndexSegment(index, null);
 
@@ -155,7 +155,8 @@ public class DistinctCountGroupByQueryTest extends InitializedNullHandlingTest {
         ExactDistinctCountAggregatorFactory aggregatorFactory = new ExactDistinctCountAggregatorFactory(
                 "distinct",
                 "visitor_id",
-                1000
+                1000,
+                true
         );
         Assert.assertEquals(aggregatorFactory, aggregatorFactory.withName("distinct"));
         Assert.assertEquals("newTest", aggregatorFactory.withName("newTest").getName());

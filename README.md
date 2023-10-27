@@ -1,10 +1,15 @@
 # Druid exact distinct count aggregator
 
-Provides a more reliable and efficient way to count the number of unique values in a column than existent approximate aggregators.
+Provides a more reliable and efficient way to count the number of unique values in a column than existent approximate
+aggregators.
+
+This aggregator uses a HashSet to store the unique values, which provides constant-time lookup and insertion.
 
 Nulls and empty strings are ignored by the aggregator. This means that they will not be counted as unique values.
 
-To use the `exact-distinct-count-aggregator`, you can add it to your Druid native query as follows:
+To use this Apache Druid extension, include `exact-distinct-count-aggregator` in the extensions load list.
+
+You can add it to your Druid native query as follows:
 
 ```
 {
@@ -34,9 +39,19 @@ To use the `exact-distinct-count-aggregator`, you can add it to your Druid nativ
       "type": "exactDistinctCount", 
       "name": "test",                 // name to be displayed
       "fieldName": "comment",         // field to be counted
-      "maxNumberOfValues": "5000"     // Integer parameter, default vlaue: 10000
+      "maxNumberOfValues": 5000     
+      "failOnLimitExceeded": true    
     }
   ]
 }
 ```
+
+# Configuration options
+
+| Name                  | Description                                                                                                                            | Possible Values  | Default |
+|-----------------------|----------------------------------------------------------------------------------------------------------------------------------------|------------------|---------|
+| `maxNumberOfValues`   | Max number of values to be aggregated                                                                                                  | Positive Integer | 10000   |
+| `failOnLimitExceeded` | Defines behavior on reaching the limit.<br/> `true`: throwing an exception<br/> `false`: logging warning and returning the limit value | Boolean          | `False` |
+
+
 
