@@ -24,12 +24,14 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     private final String name;
     private final String fieldName;
     private final Integer maxNumberOfValues;
+    private final Boolean failOnLimitExceeded;
 
     @JsonCreator
     public ExactDistinctCountAggregatorFactory(
             @JsonProperty("name") String name,
             @JsonProperty("fieldName") String fieldName,
-            @JsonProperty("maxNumberOfValues") Integer maxNumberOfValues
+            @JsonProperty("maxNumberOfValues") Integer maxNumberOfValues,
+            @JsonProperty("failOnLimitExceeded") Boolean failOnLimitExceeded
     ) {
         Preconditions.checkNotNull(name);
         Preconditions.checkNotNull(fieldName);
@@ -40,6 +42,8 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
         if (maxNumberOfValues != null && maxNumberOfValues <= 0) {
             throw new ValidationException("Invalid maxNumberOfValues -> '" + maxNumberOfValues + '\'');
         }
+
+        this.failOnLimitExceeded = failOnLimitExceeded != null && failOnLimitExceeded;
 
         this.maxNumberOfValues = maxNumberOfValues != null ? maxNumberOfValues : 10000;
     }
@@ -53,7 +57,8 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
         return new ExactDistinctCountAggregator(
                 selector,
                 Sets.newHashSet(),
-                maxNumberOfValues
+                maxNumberOfValues,
+                failOnLimitExceeded
         );
     }
 
@@ -65,13 +70,14 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
         }
         return new ExactDistinctCountBufferAggregator(
                 selector,
-                maxNumberOfValues
+                maxNumberOfValues,
+                failOnLimitExceeded
         );
     }
 
     @Override
     public AggregatorFactory withName(String newName) {
-        return new ExactDistinctCountAggregatorFactory(newName, getFieldName(), maxNumberOfValues);
+        return new ExactDistinctCountAggregatorFactory(newName, getFieldName(), maxNumberOfValues, failOnLimitExceeded);
     }
 
     private DimensionSelector makeDimensionSelector(final ColumnSelectorFactory columnFactory) {
@@ -110,7 +116,7 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     @Override
     public List<AggregatorFactory> getRequiredColumns() {
         return Collections.singletonList(
-                new ExactDistinctCountAggregatorFactory(fieldName, fieldName, maxNumberOfValues)
+                new ExactDistinctCountAggregatorFactory(fieldName, fieldName, maxNumberOfValues, failOnLimitExceeded)
         );
     }
 
@@ -135,6 +141,11 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
         return maxNumberOfValues;
     }
 
+    @JsonProperty
+    public Boolean getFailOnLimitExceeded() {
+        return failOnLimitExceeded;
+    }
+
     @Override
     @JsonProperty
     public String getName() {
@@ -151,13 +162,16 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
         byte[] fieldNameBytes = StringUtils.toUtf8(fieldName);
         byte[] bitMapFactoryCacheKey = StringUtils.toUtf8(this.getClass().getSimpleName());
         byte[] maxValuesBytes = StringUtils.toUtf8(maxNumberOfValues.toString());
-        return ByteBuffer.allocate(3 + fieldNameBytes.length + bitMapFactoryCacheKey.length + maxValuesBytes.length)
+        byte[] failOnLimitExceededBytes = StringUtils.toUtf8(failOnLimitExceeded.toString());
+        return ByteBuffer.allocate(4 + fieldNameBytes.length + bitMapFactoryCacheKey.length + maxValuesBytes.length + failOnLimitExceededBytes.length)
                 .put(AggregatorUtil.DISTINCT_COUNT_CACHE_KEY)
                 .put(fieldNameBytes)
                 .put(AggregatorUtil.STRING_SEPARATOR)
                 .put(bitMapFactoryCacheKey)
                 .put(AggregatorUtil.STRING_SEPARATOR)
                 .put(maxValuesBytes)
+                .put(AggregatorUtil.STRING_SEPARATOR)
+                .put(failOnLimitExceededBytes)
                 .array();
     }
 
@@ -193,13 +207,16 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
         if (!maxNumberOfValues.equals(that.maxNumberOfValues)) {
             return false;
         }
+        if (failOnLimitExceeded.booleanValue() != that.failOnLimitExceeded.booleanValue()) {
+            return false;
+        }
         return name.equals(that.name);
     }
 
     @Override
     public int hashCode() {
         int result = name.hashCode();
-        result = 31 * result + fieldName.hashCode() + maxNumberOfValues.hashCode();
+        result = 31 * result + fieldName.hashCode() + maxNumberOfValues.hashCode() + failOnLimitExceeded.hashCode();
         return result;
     }
 
@@ -209,6 +226,7 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
                 "name='" + name + '\'' +
                 ", fieldName='" + fieldName + '\'' +
                 ", maxNumberOfValues=" + maxNumberOfValues +
+                ", failOnLimitExceeded=" + failOnLimitExceeded.toString() +
                 '}';
     }
 }
