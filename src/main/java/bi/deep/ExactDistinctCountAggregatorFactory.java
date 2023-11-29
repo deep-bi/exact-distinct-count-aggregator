@@ -19,28 +19,34 @@ package bi.deep;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
-import com.google.common.primitives.Longs;
+import io.github.resilience4j.core.lang.NonNull;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.query.aggregation.*;
 import org.apache.druid.query.dimension.DefaultDimensionSpec;
+import org.apache.druid.query.dimension.DimensionSpec;
 import org.apache.druid.segment.ColumnSelectorFactory;
 import org.apache.druid.segment.DimensionSelector;
+import org.apache.druid.segment.RowBasedColumnSelectorFactory;
 import org.apache.druid.segment.column.ColumnType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import javax.validation.ValidationException;
 import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
+
 
 public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
-
     private final String name;
     private final String fieldName;
     private final Integer maxNumberOfValues;
     private final Boolean failOnLimitExceeded;
+    private final boolean isSubFactory;
+    private static final Logger LOG = LoggerFactory.getLogger(ExactDistinctCountAggregatorFactory.class);
+
 
     @JsonCreator
     public ExactDistinctCountAggregatorFactory(
@@ -62,9 +68,19 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
         this.failOnLimitExceeded = failOnLimitExceeded != null && failOnLimitExceeded;
 
         this.maxNumberOfValues = maxNumberOfValues != null ? maxNumberOfValues : 10000;
+        isSubFactory = false;
+    }
+
+    public ExactDistinctCountAggregatorFactory(String name, String fieldName, Integer maxNumberOfValues, Boolean failOnLimitExceeded, boolean isSubFactory) {
+        this.name = name;
+        this.fieldName = fieldName;
+        this.maxNumberOfValues = maxNumberOfValues;
+        this.failOnLimitExceeded = failOnLimitExceeded;
+        this.isSubFactory = isSubFactory;
     }
 
     @Override
+    @NonNull
     public Aggregator factorize(ColumnSelectorFactory columnFactory) {
         DimensionSelector selector = makeDimensionSelector(columnFactory);
         if (selector instanceof DimensionSelector.NullDimensionSelectorHolder) {
@@ -79,6 +95,7 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
+    @NonNull
     public BufferAggregator factorizeBuffered(ColumnSelectorFactory columnFactory) {
         DimensionSelector selector = makeDimensionSelector(columnFactory);
         if (selector instanceof DimensionSelector.NullDimensionSelectorHolder) {
@@ -92,51 +109,74 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
+    @NonNull
     public AggregatorFactory withName(String newName) {
         return new ExactDistinctCountAggregatorFactory(newName, getFieldName(), maxNumberOfValues, failOnLimitExceeded);
     }
 
     private DimensionSelector makeDimensionSelector(final ColumnSelectorFactory columnFactory) {
-        return columnFactory.makeDimensionSelector(new DefaultDimensionSpec(fieldName, fieldName));
+//        if (columnFactory instanceof RowBasedColumnSelectorFactory) {
+//            return new HashSetDimensionSelector(columnFactory.makeColumnValueSelector(fieldName));
+//        }
+        DimensionSpec dimensionSpec = new DefaultDimensionSpec(fieldName, fieldName);
+        return columnFactory.makeDimensionSelector(dimensionSpec);
     }
 
     @Override
-    public Comparator getComparator() {
-        return (o, o1) -> Longs.compare(((Number) o).longValue(), ((Number) o1).longValue());
+    @Nullable
+    public Comparator<?> getComparator() {
+        return null;
     }
 
     @Override
     public Object combine(Object lhs, Object rhs) {
-        if (lhs == null && rhs == null) {
-            return 0L;
+        LOG.debug("combine");
+        Set<Object> combinedSet = Sets.newHashSet();
+        if (lhs != null) {
+            LOG.debug(lhs.toString());
+            combinedSet.addAll((Collection<?>) lhs);
         }
-        if (rhs == null) {
-            return ((Number) lhs).longValue();
+
+        if (rhs != null) {
+            LOG.debug(rhs.toString());
+            combinedSet.addAll((Collection<?>) rhs);
         }
-        if (lhs == null) {
-            return ((Number) rhs).longValue();
-        }
-        return ((Number) lhs).longValue() + ((Number) rhs).longValue();
+        return combinedSet.isEmpty() ? Collections.emptySet() : combinedSet;
     }
 
     @Override
-    public AggregateCombiner makeAggregateCombiner() {
-        return new LongSumAggregateCombiner();
+    @NonNull
+    public AggregateCombiner<?> makeAggregateCombiner() {
+        return ExactDistinctCountAggregatorCombiner.getInstance();
     }
 
     @Override
+    @NonNull
     public AggregatorFactory getCombiningFactory() {
-        return new LongSumAggregatorFactory(name, name);
+        return new ExactDistinctCountAggregatorFactory(name, fieldName, maxNumberOfValues, failOnLimitExceeded, true);
     }
 
     @Override
+    @NonNull
+    public AggregatorFactory getMergingFactory(AggregatorFactory other) throws AggregatorFactoryNotMergeableException {
+        if (other.getName().equals(this.getName()) && this.getClass() == other.getClass()) {
+            return getCombiningFactory();
+        } else {
+            throw new AggregatorFactoryNotMergeableException(this, other);
+        }
+    }
+
+
+    @Override
+    @NonNull
     public List<AggregatorFactory> getRequiredColumns() {
-        return Collections.singletonList(
+        return ImmutableList.of(
                 new ExactDistinctCountAggregatorFactory(fieldName, fieldName, maxNumberOfValues, failOnLimitExceeded)
         );
     }
 
     @Override
+    @NonNull
     public Object deserialize(Object object) {
         return object;
     }
@@ -144,7 +184,17 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     @Nullable
     @Override
     public Object finalizeComputation(@Nullable Object object) {
-        return object;
+        LOG.debug("finalizeComputation " + object != null ? object.toString() : "null");
+        if (object instanceof Collection) {
+            final long size = ((Collection<?>) object).size();
+            if (isSubFactory) {
+                return object;
+            }
+            return size;
+        } else {
+            return null;
+        }
+
     }
 
     @JsonProperty
@@ -163,12 +213,14 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
+    @NonNull
     @JsonProperty
     public String getName() {
         return name;
     }
 
     @Override
+    @NonNull
     public List<String> requiredFields() {
         return Collections.singletonList(fieldName);
     }
@@ -192,18 +244,20 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
+    @NonNull
     public ColumnType getIntermediateType() {
-        return ColumnType.LONG;
+        return ColumnType.ofComplex(HashSetSerde.TYPE_NAME);
     }
 
     @Override
+    @NonNull
     public ColumnType getResultType() {
         return ColumnType.LONG;
     }
 
     @Override
     public int getMaxIntermediateSize() {
-        return Long.BYTES;
+        return 1000000;
     }
 
     @Override

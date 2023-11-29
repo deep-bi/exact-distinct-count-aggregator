@@ -43,116 +43,121 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 
-public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTest
-{
+public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTest {
 
-  @Test
-  public void testTimeseriesWithDistinctCountAgg() throws Exception
-  {
-    TimeseriesQueryEngine engine = new TimeseriesQueryEngine();
+    @Test
+    public void testTimeseriesWithDistinctCountAgg() throws Exception {
+        TimeseriesQueryEngine engine = new TimeseriesQueryEngine();
 
-    IncrementalIndex index = new OnheapIncrementalIndex.Builder()
-        .setIndexSchema(
-            new IncrementalIndexSchema.Builder()
-                .withQueryGranularity(Granularities.SECOND)
-                .withMetrics(new CountAggregatorFactory("cnt"))
-                .build()
-        )
-        .setMaxRowCount(1000)
-        .build();
+        IncrementalIndex index = new OnheapIncrementalIndex.Builder()
+                .setIndexSchema(
+                        new IncrementalIndexSchema.Builder()
+                                .withQueryGranularity(Granularities.SECOND)
+                                .withMetrics(new CountAggregatorFactory("cnt"))
+                                .build()
+                )
+                .setMaxRowCount(1000)
+                .build();
 
-    String visitor_id = "visitor_id";
-    String client_type = "client_type";
-    DateTime time = DateTimes.of("2016-03-04T00:00:00.000Z");
-    long timestamp = time.getMillis();
-    index.add(
-        new MapBasedInputRow(
-            timestamp,
-            Lists.newArrayList(visitor_id, client_type),
-            ImmutableMap.of(visitor_id, "0", client_type, "iphone")
-        )
-    );
-    index.add(
-        new MapBasedInputRow(
-            timestamp,
-            Lists.newArrayList(visitor_id, client_type),
-            ImmutableMap.of(visitor_id, "1", client_type, "iphone")
-        )
-    );
-    index.add(
-        new MapBasedInputRow(
-            timestamp,
-            Lists.newArrayList(visitor_id, client_type),
-            ImmutableMap.of(visitor_id, "2", client_type, "android")
-        )
-    );
+        String visitor_id = "visitor_id";
+        String client_type = "client_type";
+        DateTime time = DateTimes.of("2016-03-04T00:00:00.000Z");
+        long timestamp = time.getMillis();
+        index.add(
+                new MapBasedInputRow(
+                        timestamp,
+                        Lists.newArrayList(visitor_id, client_type),
+                        ImmutableMap.of(visitor_id, "0", client_type, "iphone")
+                )
+        );
+        index.add(
+                new MapBasedInputRow(
+                        timestamp,
+                        Lists.newArrayList(visitor_id, client_type),
+                        ImmutableMap.of(visitor_id, "1", client_type, "iphone")
+                )
+        );
+        index.add(
+                new MapBasedInputRow(
+                        timestamp,
+                        Lists.newArrayList(visitor_id, client_type),
+                        ImmutableMap.of(visitor_id, "2", client_type, "android")
+                )
+        );
 
-    TimeseriesQuery queryToFail = Druids.newTimeseriesQueryBuilder()
-                                  .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
-                                  .granularity(QueryRunnerTestHelper.ALL_GRAN)
-                                  .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
-                                  .aggregators(
-                                      Lists.newArrayList(
-                                          QueryRunnerTestHelper.ROWS_COUNT,
-                                          new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2, true)
-                                      )
-                                  )
-                                  .build();
+        TimeseriesQuery queryToFail = Druids.newTimeseriesQueryBuilder()
+                .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
+                .granularity(QueryRunnerTestHelper.ALL_GRAN)
+                .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
+                .aggregators(
+                        Lists.newArrayList(
+                                QueryRunnerTestHelper.ROWS_COUNT,
+                                new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2, true)
+                        )
+                )
+                .build();
 
-      Assert.assertThrows(RuntimeException.class, () -> engine.process(queryToFail, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList());
+        Assert.assertThrows(RuntimeException.class, () -> engine.process(queryToFail, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList());
 
 
-    TimeseriesQuery partialQuery = Druids.newTimeseriesQueryBuilder()
-                                  .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
-                                  .granularity(QueryRunnerTestHelper.ALL_GRAN)
-                                  .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
-                                  .aggregators(
-                                      Lists.newArrayList(
-                                          QueryRunnerTestHelper.ROWS_COUNT,
-                                          new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2, false)
-                                      )
-                                  )
-                                  .build();
+        TimeseriesQuery partialQuery = Druids.newTimeseriesQueryBuilder()
+                .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
+                .granularity(QueryRunnerTestHelper.ALL_GRAN)
+                .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
+                .aggregators(
+                        Lists.newArrayList(
+                                QueryRunnerTestHelper.ROWS_COUNT,
+                                new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2, false)
+                        )
+                )
+                .build();
 
-    final Iterable<Result<TimeseriesResultValue>> results =
-        engine.process(partialQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
+        final Iterable<Result<TimeseriesResultValue>> results =
+                engine.process(partialQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
 
-    List<Result<TimeseriesResultValue>> expectedResults = Collections.singletonList(
-        new Result<>(
-            time,
-            new TimeseriesResultValue(
-                ImmutableMap.of("UV", 2, "rows", 3L)
-            )
-        )
-    );
-    TestHelper.assertExpectedResults(expectedResults, results);
+        HashSet<Integer> mutableSet = new HashSet<>();
+        mutableSet.add("0".hashCode());
+        mutableSet.add("1".hashCode());
+
+        List<Result<TimeseriesResultValue>> expectedResults = Collections.singletonList(
+                new Result<>(
+                        time,
+                        new TimeseriesResultValue(
+                                ImmutableMap.of("UV", mutableSet, "rows", 3L)
+                        )
+                )
+        );
+        TestHelper.assertExpectedResults(expectedResults, results);
 
 
-    TimeseriesQuery fullQuery = Druids.newTimeseriesQueryBuilder()
-                                  .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
-                                  .granularity(QueryRunnerTestHelper.ALL_GRAN)
-                                  .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
-                                  .aggregators(
-                                      Lists.newArrayList(
-                                          QueryRunnerTestHelper.ROWS_COUNT,
-                                          new ExactDistinctCountAggregatorFactory("UV", visitor_id, 3, true)
-                                      )
-                                  )
-                                  .build();
+        TimeseriesQuery fullQuery = Druids.newTimeseriesQueryBuilder()
+                .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
+                .granularity(QueryRunnerTestHelper.ALL_GRAN)
+                .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
+                .aggregators(
+                        Lists.newArrayList(
+                                QueryRunnerTestHelper.ROWS_COUNT,
+                                new ExactDistinctCountAggregatorFactory("UV", visitor_id, 3, true)
+                        )
+                )
+                .build();
 
-    final Iterable<Result<TimeseriesResultValue>> fullResults =
-        engine.process(fullQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
+        final Iterable<Result<TimeseriesResultValue>> fullResults =
+                engine.process(fullQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
 
-    List<Result<TimeseriesResultValue>> fullExpectedResults = Collections.singletonList(
-        new Result<>(
-            time,
-            new TimeseriesResultValue(
-                ImmutableMap.of("UV", 3, "rows", 3L)
-            )
-        )
-    );
-    TestHelper.assertExpectedResults(fullExpectedResults, fullResults);
-  }
+        mutableSet.add("2".hashCode());
+
+        List<Result<TimeseriesResultValue>> fullExpectedResults = Collections.singletonList(
+                new Result<>(
+                        time,
+                        new TimeseriesResultValue(
+                                ImmutableMap.of("UV", mutableSet, "rows", 3L)
+                        )
+                )
+        );
+        TestHelper.assertExpectedResults(fullExpectedResults, fullResults);
+    }
 }
