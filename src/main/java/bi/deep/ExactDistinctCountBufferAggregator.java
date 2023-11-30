@@ -29,9 +29,11 @@ import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
 
+import static bi.deep.ExactDistinctCountAggregator.getCurrentObjectHashCode;
+
 public class ExactDistinctCountBufferAggregator implements BufferAggregator {
     private static final Logger LOG = LoggerFactory.getLogger(ExactDistinctCountBufferAggregator.class);
-    private final DimensionSelector selector; // SingleValueQueryableDimensionSelector
+    private final DimensionSelector selector;
     private final Integer maxNumberOfValues;
     private final boolean failOnLimitExceeded;
     private boolean achievedLimit;
@@ -49,10 +51,9 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
         LOG.debug(selector.getClass().getSimpleName());
         HashSet<Integer> mutableSet = Sets.newHashSet();
         byte[] byteValue = SerializationUtils.serialize(mutableSet);
-        ByteBuffer mutationBuffer = byteBuffer.duplicate();
-        mutationBuffer.position(i);
-        mutationBuffer.putInt(byteValue.length);
-        mutationBuffer.put(byteValue);
+        byteBuffer.position(i);
+        byteBuffer.putInt(byteValue.length);
+        byteBuffer.put(byteValue);
     }
 
     @Override
@@ -64,6 +65,9 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
         HashSet<Integer> mutableSet = getMutableSet(byteBuffer, position);
 
         if (mutableSet.size() >= maxNumberOfValues) {
+            if (mutableSet.contains(getCurrentObjectHashCode(selector))) {
+                return;
+            }
             if (failOnLimitExceeded) {
                 throw new RuntimeException("Reached max number of values: " + maxNumberOfValues);
             } else {
@@ -73,7 +77,7 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
             }
         }
 
-        mutableSet.add(selector.getObject() == null ? "NULL".hashCode() : selector.getObject().hashCode());
+        mutableSet.add(getCurrentObjectHashCode(selector));
 
         byte[] byteValue = SerializationUtils.serialize(mutableSet);
         byteBuffer.position(position);
@@ -83,11 +87,10 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
     }
 
     private HashSet<Integer> getMutableSet(final ByteBuffer buffer, final int position) {
-        ByteBuffer mutationBuffer = buffer.duplicate();
-        mutationBuffer.position(position);
-        final int size = mutationBuffer.getInt();
+        buffer.position(position);
+        final int size = buffer.getInt();
         final byte[] bytes = new byte[size];
-        mutationBuffer.get(bytes);
+        buffer.get(bytes);
         return SerializationUtils.deserialize(bytes);
     }
 

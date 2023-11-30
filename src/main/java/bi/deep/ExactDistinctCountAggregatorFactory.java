@@ -21,7 +21,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
-import io.github.resilience4j.core.lang.NonNull;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.query.aggregation.*;
 import org.apache.druid.query.dimension.DefaultDimensionSpec;
@@ -31,6 +30,7 @@ import org.apache.druid.segment.column.ColumnType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.validation.ValidationException;
 import java.nio.ByteBuffer;
@@ -68,8 +68,8 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
-    @NonNull
-    public Aggregator factorize(@NonNull ColumnSelectorFactory columnFactory) {
+    @Nonnull
+    public Aggregator factorize(@Nonnull ColumnSelectorFactory columnFactory) {
         DimensionSelector selector = makeDimensionSelector(columnFactory);
         if (selector instanceof DimensionSelector.NullDimensionSelectorHolder) {
             throw new ValidationException("There is no column: " + fieldName);
@@ -83,14 +83,14 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
-    @NonNull
-    public BufferAggregator factorizeBuffered(@NonNull ColumnSelectorFactory columnFactory) {
+    @Nonnull
+    public BufferAggregator factorizeBuffered(@Nonnull ColumnSelectorFactory columnFactory) {
         throw new UnsupportedOperationException("Not supported for groupBy and topN queries");
     }
 
     @Override
-    @NonNull
-    public AggregatorFactory withName(@NonNull String newName) {
+    @Nonnull
+    public AggregatorFactory withName(@Nonnull String newName) {
         return new ExactDistinctCountAggregatorFactory(newName, getFieldName(), maxNumberOfValues, failOnLimitExceeded);
     }
 
@@ -116,17 +116,17 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
             LOG.debug(rhs.toString());
             combinedSet.addAll((Collection<?>) rhs);
         }
-        return combinedSet.isEmpty() ? Collections.emptySet() : combinedSet;
+        return combinedSet;
     }
 
     @Override
-    @NonNull
+    @Nonnull
     public AggregatorFactory getCombiningFactory() {
         return new ExactDistinctCountAggregatorFactory(name, fieldName, maxNumberOfValues, failOnLimitExceeded);
     }
 
     @Override
-    @NonNull
+    @Nonnull
     public AggregatorFactory getMergingFactory(AggregatorFactory other) throws AggregatorFactoryNotMergeableException {
         if (other.getName().equals(this.getName()) && this.getClass() == other.getClass()) {
             return getCombiningFactory();
@@ -137,7 +137,7 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
 
 
     @Override
-    @NonNull
+    @Nonnull
     public List<AggregatorFactory> getRequiredColumns() {
         return ImmutableList.of(
                 new ExactDistinctCountAggregatorFactory(fieldName, fieldName, maxNumberOfValues, failOnLimitExceeded)
@@ -145,8 +145,8 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
-    @NonNull
-    public Object deserialize(@NonNull Object object) {
+    @Nonnull
+    public Object deserialize(@Nonnull Object object) {
         return object;
     }
 
@@ -177,14 +177,14 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
-    @NonNull
+    @Nonnull
     @JsonProperty
     public String getName() {
         return name;
     }
 
     @Override
-    @NonNull
+    @Nonnull
     public List<String> requiredFields() {
         return Collections.singletonList(fieldName);
     }
@@ -208,20 +208,20 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
-    @NonNull
+    @Nonnull
     public ColumnType getIntermediateType() {
         return ColumnType.LONG;
     }
 
     @Override
-    @NonNull
+    @Nonnull
     public ColumnType getResultType() {
         return ColumnType.LONG;
     }
 
     @Override
     public int getMaxIntermediateSize() {
-        return 1000000;
+        return (int) Math.ceil(maxNumberOfValues * 16 + (maxNumberOfValues / 0.75) * 8);
     }
 
     @Override

@@ -51,6 +51,9 @@ public class ExactDistinctCountAggregator implements Aggregator {
         }
 
         if (set.size() >= maxNumberOfValues) {
+            if (set.contains(getCurrentObjectHashCode(selector))) {
+                return;
+            }
             if (failOnLimitExceeded) {
                 throw new RuntimeException("Reached max number of values: " + maxNumberOfValues);
             } else {
@@ -60,8 +63,12 @@ public class ExactDistinctCountAggregator implements Aggregator {
             }
         }
 
-        set.add(selector.getObject() == null ? NULL.hashCode() : selector.getObject().hashCode());
+        set.add(getCurrentObjectHashCode(selector));
 
+    }
+
+    public static int getCurrentObjectHashCode(final DimensionSelector selector){
+        return selector.getObject() == null ? NULL.hashCode() : selector.getObject().hashCode();
     }
 
     @Override
