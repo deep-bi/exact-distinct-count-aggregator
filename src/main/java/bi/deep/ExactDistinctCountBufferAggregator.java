@@ -17,27 +17,27 @@
 package bi.deep;
 
 import com.google.common.collect.Sets;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import io.github.resilience4j.core.lang.NonNull;
+import org.apache.commons.lang3.SerializationUtils;
 import org.apache.druid.query.aggregation.BufferAggregator;
 import org.apache.druid.query.monomorphicprocessing.RuntimeShapeInspector;
 import org.apache.druid.segment.DimensionSelector;
-import org.apache.druid.segment.data.IndexedInts;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
-import java.util.Set;
+import java.util.HashSet;
 
 public class ExactDistinctCountBufferAggregator implements BufferAggregator {
-
-    private final DimensionSelector selector;
-    private final Int2ObjectMap<Set<Object>> mutableSetCollection = new Int2ObjectOpenHashMap<>();
+    private static final Logger LOG = LoggerFactory.getLogger(ExactDistinctCountBufferAggregator.class);
+    private final DimensionSelector selector; // SingleValueQueryableDimensionSelector
     private final Integer maxNumberOfValues;
     private final boolean failOnLimitExceeded;
     private boolean achievedLimit;
 
     public ExactDistinctCountBufferAggregator(DimensionSelector selector, Integer maxNumberOfValues, boolean failOnLimitExceeded) {
+        LOG.debug("buf constructor");
         this.selector = selector;
         this.maxNumberOfValues = maxNumberOfValues;
         this.failOnLimitExceeded = failOnLimitExceeded;
@@ -45,67 +45,75 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
 
     @Override
     public void init(ByteBuffer byteBuffer, int i) {
-        byteBuffer.putLong(i, 0L);
+        LOG.debug("buf init position " + i);
+        LOG.debug(selector.getClass().getSimpleName());
+        HashSet<Integer> mutableSet = Sets.newHashSet();
+        byte[] byteValue = SerializationUtils.serialize(mutableSet);
+        ByteBuffer mutationBuffer = byteBuffer.duplicate();
+        mutationBuffer.position(i);
+        mutationBuffer.putInt(byteValue.length);
+        mutationBuffer.put(byteValue);
     }
 
     @Override
-    public void aggregate(ByteBuffer byteBuffer, int position) {
-        if (achievedLimit){
+    public void aggregate(@NonNull ByteBuffer byteBuffer, int position) {
+        if (achievedLimit) {
             return;
         }
 
-        if (selector.getObject() == null || selector.getObject().equals("")) {
-            return;
-        }
-        Set<Object> mutableSet = getMutableSet(position);
-        IndexedInts row = selector.getRow();
+        HashSet<Integer> mutableSet = getMutableSet(byteBuffer, position);
 
-        for (int i = 0, rowSize = row.size(); i < rowSize && !achievedLimit; i++) {
-            if (mutableSet.size() >= maxNumberOfValues) {
-                if (failOnLimitExceeded) {
-                    throw new RuntimeException("Reached max number of values: " + maxNumberOfValues);
-                } else {
-                    achievedLimit = true;
-                    LoggerFactory.getLogger(this.getClass()).warn("Reached max number of values, result is limited");
-                    return;
-                }
+        if (mutableSet.size() >= maxNumberOfValues) {
+            if (failOnLimitExceeded) {
+                throw new RuntimeException("Reached max number of values: " + maxNumberOfValues);
+            } else {
+                achievedLimit = true;
+                LOG.warn("Reached max number of values, result is limited");
+                return;
             }
-            int index = row.get(i);
-            mutableSet.add(index);
         }
 
-        byteBuffer.putLong(position, mutableSet.size());
+        mutableSet.add(selector.getObject() == null ? "NULL".hashCode() : selector.getObject().hashCode());
+
+        byte[] byteValue = SerializationUtils.serialize(mutableSet);
+        byteBuffer.position(position);
+        byteBuffer.putInt(byteValue.length);
+        byteBuffer.put(byteValue);
+
     }
 
-    private Set<Object> getMutableSet(int position) {
-        Set<Object> mutableSet = mutableSetCollection.get(position);
-        if (mutableSet == null) {
-            mutableSet = Sets.newHashSet();
-            mutableSetCollection.put(position, mutableSet);
-        }
-        return mutableSet;
+    private HashSet<Integer> getMutableSet(final ByteBuffer buffer, final int position) {
+        ByteBuffer mutationBuffer = buffer.duplicate();
+        mutationBuffer.position(position);
+        final int size = mutationBuffer.getInt();
+        final byte[] bytes = new byte[size];
+        mutationBuffer.get(bytes);
+        return SerializationUtils.deserialize(bytes);
     }
 
     @Nullable
     @Override
-    public Object get(ByteBuffer byteBuffer, int i) {
-        return byteBuffer.getLong(i);
+    public Object get(@NonNull ByteBuffer byteBuffer, int i) {
+        HashSet<Integer> mutableSet = getMutableSet(byteBuffer, i);
+        LOG.debug("Returning " + mutableSet.toString() + "with size " + mutableSet.size());
+        return mutableSet;
     }
 
     @Override
-    public float getFloat(ByteBuffer byteBuffer, int i) {
-        return byteBuffer.getLong(i);
+    public float getFloat(@NonNull ByteBuffer byteBuffer, int i) {
+        throw new UnsupportedOperationException("ExactDistinctCountBufferAggregator does not support getFloat()");
     }
 
     @Override
-    public long getLong(ByteBuffer byteBuffer, int i) {
-        return byteBuffer.getLong(i);
+    public long getLong(@NonNull ByteBuffer byteBuffer, int i) {
+        throw new UnsupportedOperationException("ExactDistinctCountBufferAggregator does not support getLong()");
     }
 
     @Override
     public void close() {
-        mutableSetCollection.clear();
+
     }
+
 
     @Override
     public void inspectRuntimeShape(RuntimeShapeInspector inspector) {

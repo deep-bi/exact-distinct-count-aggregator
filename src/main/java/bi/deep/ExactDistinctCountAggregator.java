@@ -18,7 +18,6 @@ package bi.deep;
 
 import org.apache.druid.query.aggregation.Aggregator;
 import org.apache.druid.segment.DimensionSelector;
-import org.apache.druid.segment.data.IndexedInts;
 import org.slf4j.LoggerFactory;
 
 import java.util.Set;
@@ -30,6 +29,8 @@ public class ExactDistinctCountAggregator implements Aggregator {
     private final Integer maxNumberOfValues;
     private final boolean failOnLimitExceeded;
     private boolean achievedLimit;
+    private static final String NULL = "NULL";
+
 
     public ExactDistinctCountAggregator(
             DimensionSelector selector,
@@ -49,49 +50,44 @@ public class ExactDistinctCountAggregator implements Aggregator {
             return;
         }
 
-        if (selector.getObject() == null || selector.getObject().equals("")) {
-            return;
-        }
-        IndexedInts row = selector.getRow();
-
-
-        for (int i = 0, rowSize = row.size(); i < rowSize && !achievedLimit; i++) {
-            if (set.size() >= maxNumberOfValues) {
-                if (failOnLimitExceeded) {
-                    throw new RuntimeException("Reached max number of values: " + maxNumberOfValues);
-                } else {
-                    achievedLimit = true;
-                    LoggerFactory.getLogger(this.getClass()).warn("Reached max number of values, result is limited");
-                    return;
-                }
+        if (set.size() >= maxNumberOfValues) {
+            if (failOnLimitExceeded) {
+                throw new RuntimeException("Reached max number of values: " + maxNumberOfValues);
+            } else {
+                achievedLimit = true;
+                LoggerFactory.getLogger(this.getClass()).warn("Reached max number of values, result is limited");
+                return;
             }
-            int index = row.get(i);
-            set.add(index);
         }
+
+        set.add(selector.getObject() == null ? NULL.hashCode() : selector.getObject().hashCode());
+
     }
 
     @Override
     public Object get() {
-        return set.size();
+        return set;
     }
 
-    @Override
-    public float getFloat() {
-        return (float) set.size();
-    }
 
     @Override
     public void close() {
-        set.clear();
+
+    }
+
+
+    @Override
+    public float getFloat() {
+        throw new UnsupportedOperationException("ExactDistinctCountAggregator does not support getFloat()");
     }
 
     @Override
     public long getLong() {
-        return set.size();
+        throw new UnsupportedOperationException("ExactDistinctCountAggregator does not support getLong()");
     }
 
     @Override
     public double getDouble() {
-        return set.size();
+        throw new UnsupportedOperationException("ExactDistinctCountAggregator does not support getDouble()");
     }
 }
