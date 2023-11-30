@@ -53,5 +53,6 @@ You can add it to your Druid native query as follows:
 | `maxNumberOfValues`   | Max number of values to be aggregated                                                                                                  | Positive Integer | 10000   |
 | `failOnLimitExceeded` | Defines behavior on reaching the limit.<br/> `true`: throwing an exception<br/> `false`: logging warning and returning the limit value | Boolean          | `False` |
 
+# Limitations
 
-
+- Aggregator is not supported in GroupBy queries.
