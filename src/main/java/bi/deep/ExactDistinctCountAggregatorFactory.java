@@ -19,28 +19,31 @@ package bi.deep;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
-import com.google.common.primitives.Longs;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.query.aggregation.*;
 import org.apache.druid.query.dimension.DefaultDimensionSpec;
 import org.apache.druid.segment.ColumnSelectorFactory;
 import org.apache.druid.segment.DimensionSelector;
 import org.apache.druid.segment.column.ColumnType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.validation.ValidationException;
 import java.nio.ByteBuffer;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
+
 
 public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
-
     private final String name;
     private final String fieldName;
     private final Integer maxNumberOfValues;
     private final Boolean failOnLimitExceeded;
+    private static final Logger LOG = LoggerFactory.getLogger(ExactDistinctCountAggregatorFactory.class);
+
 
     @JsonCreator
     public ExactDistinctCountAggregatorFactory(
@@ -65,7 +68,8 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
-    public Aggregator factorize(ColumnSelectorFactory columnFactory) {
+    @Nonnull
+    public Aggregator factorize(@Nonnull ColumnSelectorFactory columnFactory) {
         DimensionSelector selector = makeDimensionSelector(columnFactory);
         if (selector instanceof DimensionSelector.NullDimensionSelectorHolder) {
             throw new ValidationException("There is no column: " + fieldName);
@@ -79,20 +83,14 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
-    public BufferAggregator factorizeBuffered(ColumnSelectorFactory columnFactory) {
-        DimensionSelector selector = makeDimensionSelector(columnFactory);
-        if (selector instanceof DimensionSelector.NullDimensionSelectorHolder) {
-            throw new ValidationException("There is no column: " + fieldName);
-        }
-        return new ExactDistinctCountBufferAggregator(
-                selector,
-                maxNumberOfValues,
-                failOnLimitExceeded
-        );
+    @Nonnull
+    public BufferAggregator factorizeBuffered(@Nonnull ColumnSelectorFactory columnFactory) {
+        throw new UnsupportedOperationException("Not supported for groupBy and topN queries");
     }
 
     @Override
-    public AggregatorFactory withName(String newName) {
+    @Nonnull
+    public AggregatorFactory withName(@Nonnull String newName) {
         return new ExactDistinctCountAggregatorFactory(newName, getFieldName(), maxNumberOfValues, failOnLimitExceeded);
     }
 
@@ -101,50 +99,66 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
-    public Comparator getComparator() {
-        return (o, o1) -> Longs.compare(((Number) o).longValue(), ((Number) o1).longValue());
+    @Nullable
+    public Comparator<?> getComparator() {
+        return null;
     }
 
     @Override
     public Object combine(Object lhs, Object rhs) {
-        if (lhs == null && rhs == null) {
-            return 0L;
+        Set<Object> combinedSet = Sets.newHashSet();
+        if (lhs != null) {
+            LOG.debug(lhs.toString());
+            combinedSet.addAll((Collection<?>) lhs);
         }
-        if (rhs == null) {
-            return ((Number) lhs).longValue();
+
+        if (rhs != null) {
+            LOG.debug(rhs.toString());
+            combinedSet.addAll((Collection<?>) rhs);
         }
-        if (lhs == null) {
-            return ((Number) rhs).longValue();
-        }
-        return ((Number) lhs).longValue() + ((Number) rhs).longValue();
+        return combinedSet;
     }
 
     @Override
-    public AggregateCombiner makeAggregateCombiner() {
-        return new LongSumAggregateCombiner();
-    }
-
-    @Override
+    @Nonnull
     public AggregatorFactory getCombiningFactory() {
-        return new LongSumAggregatorFactory(name, name);
+        return new ExactDistinctCountAggregatorFactory(name, fieldName, maxNumberOfValues, failOnLimitExceeded);
     }
 
     @Override
+    @Nonnull
+    public AggregatorFactory getMergingFactory(AggregatorFactory other) throws AggregatorFactoryNotMergeableException {
+        if (other.getName().equals(this.getName()) && this.getClass() == other.getClass()) {
+            return getCombiningFactory();
+        } else {
+            throw new AggregatorFactoryNotMergeableException(this, other);
+        }
+    }
+
+
+    @Override
+    @Nonnull
     public List<AggregatorFactory> getRequiredColumns() {
-        return Collections.singletonList(
+        return ImmutableList.of(
                 new ExactDistinctCountAggregatorFactory(fieldName, fieldName, maxNumberOfValues, failOnLimitExceeded)
         );
     }
 
     @Override
-    public Object deserialize(Object object) {
+    @Nonnull
+    public Object deserialize(@Nonnull Object object) {
         return object;
     }
 
     @Nullable
     @Override
     public Object finalizeComputation(@Nullable Object object) {
-        return object;
+        if (object instanceof Collection) {
+            return ((Collection<?>) object).size();
+        } else {
+            return object;
+        }
+
     }
 
     @JsonProperty
@@ -163,12 +177,14 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
+    @Nonnull
     @JsonProperty
     public String getName() {
         return name;
     }
 
     @Override
+    @Nonnull
     public List<String> requiredFields() {
         return Collections.singletonList(fieldName);
     }
@@ -192,18 +208,20 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @Override
+    @Nonnull
     public ColumnType getIntermediateType() {
         return ColumnType.LONG;
     }
 
     @Override
+    @Nonnull
     public ColumnType getResultType() {
         return ColumnType.LONG;
     }
 
     @Override
     public int getMaxIntermediateSize() {
-        return Long.BYTES;
+        return (int) Math.ceil(maxNumberOfValues * 16 + (maxNumberOfValues / 0.75) * 8);
     }
 
     @Override

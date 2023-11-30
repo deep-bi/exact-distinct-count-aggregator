@@ -29,9 +29,9 @@ public class ExactDistinctCountDruidModule implements DruidModule {
 
     public static final String EXACT_DISTINCT_COUNT = "exactDistinctCount";
 
+
     @Override
     public void configure(Binder binder) {
-
     }
 
     @Override
