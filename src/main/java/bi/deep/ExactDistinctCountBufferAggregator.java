@@ -17,7 +17,7 @@
 package bi.deep;
 
 import com.google.common.collect.Sets;
-import io.github.resilience4j.core.lang.NonNull;
+import javax.annotation.Nonnull;
 import org.apache.commons.lang3.SerializationUtils;
 import org.apache.druid.query.aggregation.BufferAggregator;
 import org.apache.druid.query.monomorphicprocessing.RuntimeShapeInspector;
@@ -57,7 +57,7 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
     }
 
     @Override
-    public void aggregate(@NonNull ByteBuffer byteBuffer, int position) {
+    public void aggregate(@Nonnull ByteBuffer byteBuffer, int position) {
         if (achievedLimit) {
             return;
         }
@@ -96,19 +96,19 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
 
     @Nullable
     @Override
-    public Object get(@NonNull ByteBuffer byteBuffer, int i) {
+    public Object get(@Nonnull ByteBuffer byteBuffer, int i) {
         HashSet<Integer> mutableSet = getMutableSet(byteBuffer, i);
         LOG.debug("Returning " + mutableSet.toString() + "with size " + mutableSet.size());
         return mutableSet;
     }
 
     @Override
-    public float getFloat(@NonNull ByteBuffer byteBuffer, int i) {
+    public float getFloat(@Nonnull ByteBuffer byteBuffer, int i) {
         throw new UnsupportedOperationException("ExactDistinctCountBufferAggregator does not support getFloat()");
     }
 
     @Override
-    public long getLong(@NonNull ByteBuffer byteBuffer, int i) {
+    public long getLong(@Nonnull ByteBuffer byteBuffer, int i) {
         throw new UnsupportedOperationException("ExactDistinctCountBufferAggregator does not support getLong()");
     }
 
