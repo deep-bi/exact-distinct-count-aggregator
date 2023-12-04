@@ -20,12 +20,12 @@ import org.apache.druid.query.aggregation.Aggregator;
 import org.apache.druid.segment.DimensionSelector;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Set;
 
 public class ExactDistinctCountAggregator implements Aggregator {
-
-    private final DimensionSelector selector;
-    private final Set<Object> set;
+    private final List<DimensionSelector> selectors;
+    private final Set<Integer> set;
     private final Integer maxNumberOfValues;
     private final boolean failOnLimitExceeded;
     private boolean achievedLimit;
@@ -33,12 +33,12 @@ public class ExactDistinctCountAggregator implements Aggregator {
 
 
     public ExactDistinctCountAggregator(
-            DimensionSelector selector,
-            Set<Object> set,
+            List<DimensionSelector> selectors,
+            Set<Integer> set,
             Integer maxNumberOfValues,
             boolean failOnLimitExceeded
     ) {
-        this.selector = selector;
+        this.selectors = selectors;
         this.set = set;
         this.maxNumberOfValues = maxNumberOfValues;
         this.failOnLimitExceeded = failOnLimitExceeded;
@@ -51,7 +51,7 @@ public class ExactDistinctCountAggregator implements Aggregator {
         }
 
         if (set.size() >= maxNumberOfValues) {
-            if (set.contains(getCurrentObjectHashCode(selector))) {
+            if (contains(set, selectors)) {
                 return;
             }
             if (failOnLimitExceeded) {
@@ -63,8 +63,15 @@ public class ExactDistinctCountAggregator implements Aggregator {
             }
         }
 
-        set.add(getCurrentObjectHashCode(selector));
+        add(set, selectors);
+    }
 
+    public static boolean contains(Set<Integer> set, List<DimensionSelector> selectors) {
+        return selectors.stream().map(ExactDistinctCountAggregator::getCurrentObjectHashCode).allMatch(set::contains);
+    }
+
+    public static void add(Set<Integer> set, List<DimensionSelector> selectors) {
+        selectors.forEach(selector -> set.add(getCurrentObjectHashCode(selector)));
     }
 
     public static int getCurrentObjectHashCode(final DimensionSelector selector){

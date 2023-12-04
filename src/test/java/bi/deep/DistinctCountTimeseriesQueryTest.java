@@ -19,6 +19,7 @@
 
 package bi.deep;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import org.apache.druid.data.input.MapBasedInputRow;
@@ -95,7 +96,7 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
                 .aggregators(
                         Lists.newArrayList(
                                 QueryRunnerTestHelper.ROWS_COUNT,
-                                new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2, true)
+                                new ExactDistinctCountAggregatorFactory("UV", ImmutableList.of(visitor_id), 2, true)
                         )
                 )
                 .build();
@@ -110,7 +111,7 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
                 .aggregators(
                         Lists.newArrayList(
                                 QueryRunnerTestHelper.ROWS_COUNT,
-                                new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2, false)
+                                new ExactDistinctCountAggregatorFactory("UV", ImmutableList.of(visitor_id), 2, false)
                         )
                 )
                 .build();
@@ -140,7 +141,7 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
                 .aggregators(
                         Lists.newArrayList(
                                 QueryRunnerTestHelper.ROWS_COUNT,
-                                new ExactDistinctCountAggregatorFactory("UV", visitor_id, 3, true)
+                                new ExactDistinctCountAggregatorFactory("UV", ImmutableList.of(visitor_id), 3, true)
                         )
                 )
                 .build();
@@ -159,5 +160,36 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
                 )
         );
         TestHelper.assertExpectedResults(fullExpectedResults, fullResults);
+
+
+      TimeseriesQuery multiDimensionQuery = Druids.newTimeseriesQueryBuilder()
+        .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
+        .granularity(QueryRunnerTestHelper.ALL_GRAN)
+        .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
+        .aggregators(
+          Lists.newArrayList(
+            QueryRunnerTestHelper.ROWS_COUNT,
+            new ExactDistinctCountAggregatorFactory("UV", ImmutableList.of(visitor_id, client_type), 4, true)
+          )
+        )
+        .build();
+
+      final Iterable<Result<TimeseriesResultValue>> multiDimensionResults =
+        engine.process(multiDimensionQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
+
+      mutableSet.add("2".hashCode());
+      mutableSet.add("android".hashCode());
+      mutableSet.add("iphone".hashCode());
+
+      List<Result<TimeseriesResultValue>> multiDimensionExpectedResults = Collections.singletonList(
+        new Result<>(
+          time,
+          new TimeseriesResultValue(
+            ImmutableMap.of("UV", mutableSet, "rows", 3L)
+          )
+        )
+      );
+
+      TestHelper.assertExpectedResults(multiDimensionResults, multiDimensionExpectedResults);
     }
 }
