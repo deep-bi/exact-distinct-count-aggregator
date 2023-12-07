@@ -30,8 +30,6 @@ import java.nio.ByteBuffer;
 import java.util.HashSet;
 import java.util.List;
 
-import static bi.deep.ExactDistinctCountAggregator.*;
-
 public class ExactDistinctCountBufferAggregator implements BufferAggregator {
     private static final Logger LOG = LoggerFactory.getLogger(ExactDistinctCountBufferAggregator.class);
     private final List<DimensionSelector> selectors;
@@ -63,10 +61,10 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
             return;
         }
 
-        HashSet<Integer> mutableSet = getMutableSet(byteBuffer, position);
+        HashcodeRegistry hashcodeRegistry = new HashcodeRegistry(getMutableSet(byteBuffer, position));
 
-        if (mutableSet.size() >= maxNumberOfValues) {
-            if (contains(mutableSet, selectors)) {
+        if (hashcodeRegistry.size() >= maxNumberOfValues) {
+            if (hashcodeRegistry.contains(selectors)) {
                 return;
             }
             if (failOnLimitExceeded) {
@@ -78,9 +76,9 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
             }
         }
 
-        add(mutableSet, selectors);
+        hashcodeRegistry.add(selectors);
 
-        byte[] byteValue = SerializationUtils.serialize(mutableSet);
+        byte[] byteValue = SerializationUtils.serialize(hashcodeRegistry.getRegistry());
         byteBuffer.position(position);
         byteBuffer.putInt(byteValue.length);
         byteBuffer.put(byteValue);
