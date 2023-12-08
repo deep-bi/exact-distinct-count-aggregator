@@ -38,7 +38,7 @@ You can add it to your Druid native query as follows:
     {      
       "type": "exactDistinctCount", 
       "name": "test",                 // name to be displayed
-      "fieldNames": ["comment", "cityName"],         // field to be counted
+      "fieldNames": ["comment", "cityName"],         // fields to be counted
       "maxNumberOfValues": 5000     
       "failOnLimitExceeded": true    
     }
