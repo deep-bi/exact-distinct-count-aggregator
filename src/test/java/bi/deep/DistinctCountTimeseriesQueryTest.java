@@ -19,7 +19,9 @@
 
 package bi.deep;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import org.apache.druid.data.input.MapBasedInputRow;
 import org.apache.druid.java.util.common.DateTimes;
@@ -33,26 +35,29 @@ import org.apache.druid.query.timeseries.TimeseriesQuery;
 import org.apache.druid.query.timeseries.TimeseriesQueryEngine;
 import org.apache.druid.query.timeseries.TimeseriesResultValue;
 import org.apache.druid.segment.TestHelper;
-import org.apache.druid.segment.incremental.IncrementalIndex;
-import org.apache.druid.segment.incremental.IncrementalIndexSchema;
-import org.apache.druid.segment.incremental.IncrementalIndexStorageAdapter;
-import org.apache.druid.segment.incremental.OnheapIncrementalIndex;
+import org.apache.druid.segment.incremental.*;
 import org.apache.druid.testing.InitializedNullHandlingTest;
 import org.joda.time.DateTime;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTest {
+    private static final String VISITOR_ID = "visitor_id";
+    private static final String CLIENT_TYPE = "client_type";
+    private static final DateTime DATE_TIME = DateTimes.of("2016-03-04T00:00:00.000Z");
 
-    @Test
-    public void testTimeseriesWithDistinctCountAgg() throws Exception {
-        TimeseriesQueryEngine engine = new TimeseriesQueryEngine();
+    private TimeseriesQueryEngine engine;
+    private IncrementalIndex index;
 
-        IncrementalIndex index = new OnheapIncrementalIndex.Builder()
+    @Before
+    public void setup() throws IndexSizeExceededException {
+        engine = new TimeseriesQueryEngine();
+        index = new OnheapIncrementalIndex.Builder()
                 .setIndexSchema(
                         new IncrementalIndexSchema.Builder()
                                 .withQueryGranularity(Granularities.SECOND)
@@ -61,33 +66,32 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
                 )
                 .setMaxRowCount(1000)
                 .build();
+        long timestamp = DATE_TIME.getMillis();
+        index.add(
+                new MapBasedInputRow(
+                        timestamp,
+                        Lists.newArrayList(VISITOR_ID, CLIENT_TYPE),
+                        ImmutableMap.of(VISITOR_ID, "0", CLIENT_TYPE, "iphone")
+                )
+        );
+        index.add(
+                new MapBasedInputRow(
+                        timestamp,
+                        Lists.newArrayList(VISITOR_ID, CLIENT_TYPE),
+                        ImmutableMap.of(VISITOR_ID, "1", CLIENT_TYPE, "iphone")
+                )
+        );
+        index.add(
+                new MapBasedInputRow(
+                        timestamp,
+                        Lists.newArrayList(VISITOR_ID, CLIENT_TYPE),
+                        ImmutableMap.of(VISITOR_ID, "2", CLIENT_TYPE, "android")
+                )
+        );
+    }
 
-        String visitor_id = "visitor_id";
-        String client_type = "client_type";
-        DateTime time = DateTimes.of("2016-03-04T00:00:00.000Z");
-        long timestamp = time.getMillis();
-        index.add(
-                new MapBasedInputRow(
-                        timestamp,
-                        Lists.newArrayList(visitor_id, client_type),
-                        ImmutableMap.of(visitor_id, "0", client_type, "iphone")
-                )
-        );
-        index.add(
-                new MapBasedInputRow(
-                        timestamp,
-                        Lists.newArrayList(visitor_id, client_type),
-                        ImmutableMap.of(visitor_id, "1", client_type, "iphone")
-                )
-        );
-        index.add(
-                new MapBasedInputRow(
-                        timestamp,
-                        Lists.newArrayList(visitor_id, client_type),
-                        ImmutableMap.of(visitor_id, "2", client_type, "android")
-                )
-        );
-
+    @Test
+    public void testFailQuery() {
         TimeseriesQuery queryToFail = Druids.newTimeseriesQueryBuilder()
                 .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
                 .granularity(QueryRunnerTestHelper.ALL_GRAN)
@@ -95,14 +99,16 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
                 .aggregators(
                         Lists.newArrayList(
                                 QueryRunnerTestHelper.ROWS_COUNT,
-                                new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2, true)
+                                new ExactDistinctCountAggregatorFactory("UV", ImmutableList.of(VISITOR_ID), 2, true)
                         )
                 )
                 .build();
 
         Assert.assertThrows(RuntimeException.class, () -> engine.process(queryToFail, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList());
+    }
 
-
+    @Test
+    public void testPartialQuery() {
         TimeseriesQuery partialQuery = Druids.newTimeseriesQueryBuilder()
                 .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
                 .granularity(QueryRunnerTestHelper.ALL_GRAN)
@@ -110,29 +116,28 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
                 .aggregators(
                         Lists.newArrayList(
                                 QueryRunnerTestHelper.ROWS_COUNT,
-                                new ExactDistinctCountAggregatorFactory("UV", visitor_id, 2, false)
+                                new ExactDistinctCountAggregatorFactory("UV", ImmutableList.of(VISITOR_ID), 2, false)
                         )
                 )
                 .build();
 
         final Iterable<Result<TimeseriesResultValue>> results =
                 engine.process(partialQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
-
-        HashSet<Integer> mutableSet = new HashSet<>();
-        mutableSet.add("0".hashCode());
-        mutableSet.add("1".hashCode());
+        Set<Integer> set = ImmutableSet.of(ImmutableList.of("0").hashCode(), ImmutableList.of("1").hashCode());
 
         List<Result<TimeseriesResultValue>> expectedResults = Collections.singletonList(
                 new Result<>(
-                        time,
+                        DATE_TIME,
                         new TimeseriesResultValue(
-                                ImmutableMap.of("UV", mutableSet, "rows", 3L)
+                                ImmutableMap.of("UV", set, "rows", 3L)
                         )
                 )
         );
         TestHelper.assertExpectedResults(expectedResults, results);
+    }
 
-
+    @Test
+    public void testFullQuery() {
         TimeseriesQuery fullQuery = Druids.newTimeseriesQueryBuilder()
                 .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
                 .granularity(QueryRunnerTestHelper.ALL_GRAN)
@@ -140,7 +145,7 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
                 .aggregators(
                         Lists.newArrayList(
                                 QueryRunnerTestHelper.ROWS_COUNT,
-                                new ExactDistinctCountAggregatorFactory("UV", visitor_id, 3, true)
+                                new ExactDistinctCountAggregatorFactory("UV", ImmutableList.of(VISITOR_ID), 3, true)
                         )
                 )
                 .build();
@@ -148,16 +153,106 @@ public class DistinctCountTimeseriesQueryTest extends InitializedNullHandlingTes
         final Iterable<Result<TimeseriesResultValue>> fullResults =
                 engine.process(fullQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
 
-        mutableSet.add("2".hashCode());
+        Set<Integer> set = ImmutableSet.of(ImmutableList.of("0").hashCode(),
+                ImmutableList.of("1").hashCode(),
+                ImmutableList.of("2").hashCode());
 
         List<Result<TimeseriesResultValue>> fullExpectedResults = Collections.singletonList(
                 new Result<>(
-                        time,
+                        DATE_TIME,
                         new TimeseriesResultValue(
-                                ImmutableMap.of("UV", mutableSet, "rows", 3L)
+                                ImmutableMap.of("UV", set, "rows", 3L)
                         )
                 )
         );
         TestHelper.assertExpectedResults(fullExpectedResults, fullResults);
+    }
+
+    @Test
+    public void testMultiDimensionQuery() {
+        TimeseriesQuery multiDimensionQuery = Druids.newTimeseriesQueryBuilder()
+                .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
+                .granularity(QueryRunnerTestHelper.ALL_GRAN)
+                .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
+                .aggregators(
+                        Lists.newArrayList(
+                                QueryRunnerTestHelper.ROWS_COUNT,
+                                new ExactDistinctCountAggregatorFactory("UV", ImmutableList.of(VISITOR_ID, CLIENT_TYPE), 4, true)
+                        )
+                )
+                .build();
+
+        final Iterable<Result<TimeseriesResultValue>> multiDimensionResults =
+                engine.process(multiDimensionQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
+
+        Set<Integer> set = ImmutableSet.of(ImmutableList.of("0","iphone").hashCode(),
+                ImmutableList.of("1","iphone").hashCode(),
+                ImmutableList.of("2","android").hashCode());
+
+        List<Result<TimeseriesResultValue>> multiDimensionExpectedResults = Collections.singletonList(
+                new Result<>(
+                        DATE_TIME,
+                        new TimeseriesResultValue(
+                                ImmutableMap.of("UV", set, "rows", 3L)
+                        )
+                )
+        );
+
+        TestHelper.assertExpectedResults(multiDimensionResults, multiDimensionExpectedResults);
+    }
+
+    @Test
+    public void testMultiDimensionWithDuplicateRows() throws IndexSizeExceededException {
+        index.add(
+                new MapBasedInputRow(
+                        DATE_TIME.getMillis(),
+                        Lists.newArrayList(VISITOR_ID, CLIENT_TYPE),
+                        ImmutableMap.of(VISITOR_ID, "1", CLIENT_TYPE, "iphone")
+                )
+        );
+        index.add(
+                new MapBasedInputRow(
+                        DATE_TIME.getMillis(),
+                        Lists.newArrayList(VISITOR_ID, CLIENT_TYPE),
+                        ImmutableMap.of(VISITOR_ID, "3", CLIENT_TYPE, "blackberry")
+                )
+        );
+        index.add(
+                new MapBasedInputRow(
+                        DATE_TIME.getMillis(),
+                        Lists.newArrayList(VISITOR_ID, CLIENT_TYPE),
+                        ImmutableMap.of(VISITOR_ID, "3", CLIENT_TYPE, "blackberry")
+                )
+        );
+        TimeseriesQuery multiDimensionQuery = Druids.newTimeseriesQueryBuilder()
+                .dataSource(QueryRunnerTestHelper.DATA_SOURCE)
+                .granularity(QueryRunnerTestHelper.ALL_GRAN)
+                .intervals(QueryRunnerTestHelper.FULL_ON_INTERVAL_SPEC)
+                .aggregators(
+                        Lists.newArrayList(
+                                QueryRunnerTestHelper.ROWS_COUNT,
+                                new ExactDistinctCountAggregatorFactory("UV", ImmutableList.of(VISITOR_ID, CLIENT_TYPE), 4, true)
+                        )
+                )
+                .build();
+
+        final Iterable<Result<TimeseriesResultValue>> multiDimensionResults =
+                engine.process(multiDimensionQuery, new IncrementalIndexStorageAdapter(index), new DefaultTimeseriesQueryMetrics()).toList();
+
+        Set<Integer> set = ImmutableSet.of(ImmutableList.of("0","iphone").hashCode(),
+                ImmutableList.of("1","iphone").hashCode(),
+                ImmutableList.of("2","android").hashCode(),
+                ImmutableList.of("3","blackberry").hashCode());
+
+        List<Result<TimeseriesResultValue>> multiDimensionExpectedResults = Collections.singletonList(
+                new Result<>(
+                        DATE_TIME,
+                        new TimeseriesResultValue(
+                                ImmutableMap.of("UV", set, "rows", 4L)
+                        )
+                )
+        );
+
+        TestHelper.assertExpectedResults(multiDimensionResults, multiDimensionExpectedResults);
     }
 }

@@ -28,19 +28,18 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 import java.util.HashSet;
-
-import static bi.deep.ExactDistinctCountAggregator.getCurrentObjectHashCode;
+import java.util.List;
 
 public class ExactDistinctCountBufferAggregator implements BufferAggregator {
     private static final Logger LOG = LoggerFactory.getLogger(ExactDistinctCountBufferAggregator.class);
-    private final DimensionSelector selector;
+    private final List<DimensionSelector> selectors;
     private final Integer maxNumberOfValues;
     private final boolean failOnLimitExceeded;
     private boolean achievedLimit;
 
-    public ExactDistinctCountBufferAggregator(DimensionSelector selector, Integer maxNumberOfValues, boolean failOnLimitExceeded) {
+    public ExactDistinctCountBufferAggregator(List<DimensionSelector> selectors, Integer maxNumberOfValues, boolean failOnLimitExceeded) {
         LOG.debug("buf constructor");
-        this.selector = selector;
+        this.selectors = selectors;
         this.maxNumberOfValues = maxNumberOfValues;
         this.failOnLimitExceeded = failOnLimitExceeded;
     }
@@ -48,7 +47,7 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
     @Override
     public void init(ByteBuffer byteBuffer, int i) {
         LOG.debug("buf init position " + i);
-        LOG.debug(selector.getClass().getSimpleName());
+        LOG.debug(selectors.getClass().getSimpleName());
         HashSet<Integer> mutableSet = Sets.newHashSet();
         byte[] byteValue = SerializationUtils.serialize(mutableSet);
         byteBuffer.position(i);
@@ -62,10 +61,10 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
             return;
         }
 
-        HashSet<Integer> mutableSet = getMutableSet(byteBuffer, position);
+        HashcodeRegistry hashcodeRegistry = new HashcodeRegistry(getMutableSet(byteBuffer, position));
 
-        if (mutableSet.size() >= maxNumberOfValues) {
-            if (mutableSet.contains(getCurrentObjectHashCode(selector))) {
+        if (hashcodeRegistry.size() >= maxNumberOfValues) {
+            if (hashcodeRegistry.contains(selectors)) {
                 return;
             }
             if (failOnLimitExceeded) {
@@ -77,13 +76,12 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
             }
         }
 
-        mutableSet.add(getCurrentObjectHashCode(selector));
+        hashcodeRegistry.add(selectors);
 
-        byte[] byteValue = SerializationUtils.serialize(mutableSet);
+        byte[] byteValue = SerializationUtils.serialize(hashcodeRegistry.getRegistry());
         byteBuffer.position(position);
         byteBuffer.putInt(byteValue.length);
         byteBuffer.put(byteValue);
-
     }
 
     private HashSet<Integer> getMutableSet(final ByteBuffer buffer, final int position) {
@@ -120,6 +118,6 @@ public class ExactDistinctCountBufferAggregator implements BufferAggregator {
 
     @Override
     public void inspectRuntimeShape(RuntimeShapeInspector inspector) {
-        inspector.visit("selector", selector);
+        inspector.visit("selector", selectors);
     }
 }
