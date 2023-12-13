@@ -39,7 +39,7 @@ import java.util.*;
 
 public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     private final String name;
-    private final String fieldName;
+    private final List<String> fieldNames;
     private final Integer maxNumberOfValues;
     private final Boolean failOnLimitExceeded;
     private static final Logger LOG = LoggerFactory.getLogger(ExactDistinctCountAggregatorFactory.class);
@@ -48,15 +48,16 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     @JsonCreator
     public ExactDistinctCountAggregatorFactory(
             @JsonProperty("name") String name,
-            @JsonProperty("fieldName") String fieldName,
+            @JsonProperty("fieldNames") List<String> fieldNames,
             @JsonProperty("maxNumberOfValues") Integer maxNumberOfValues,
             @JsonProperty("failOnLimitExceeded") Boolean failOnLimitExceeded
     ) {
         Preconditions.checkNotNull(name);
-        Preconditions.checkNotNull(fieldName);
+        Preconditions.checkNotNull(fieldNames);
+        Preconditions.checkArgument(!fieldNames.isEmpty());
 
         this.name = name;
-        this.fieldName = fieldName;
+        this.fieldNames = fieldNames;
 
         if (maxNumberOfValues != null && maxNumberOfValues <= 0) {
             throw new ValidationException("Invalid maxNumberOfValues -> '" + maxNumberOfValues + '\'');
@@ -70,12 +71,20 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     @Override
     @Nonnull
     public Aggregator factorize(@Nonnull ColumnSelectorFactory columnFactory) {
-        DimensionSelector selector = makeDimensionSelector(columnFactory);
-        if (selector instanceof DimensionSelector.NullDimensionSelectorHolder) {
-            throw new ValidationException("There is no column: " + fieldName);
+        List<DimensionSelector> selectors = new ArrayList<>();
+
+        for (String fieldName : fieldNames) {
+            DimensionSelector selector = makeDimensionSelector(columnFactory, fieldName);
+
+            if (selector instanceof DimensionSelector.NullDimensionSelectorHolder) {
+                throw new ValidationException("There is no column: " + fieldName);
+            }
+
+            selectors.add(selector);
         }
+
         return new ExactDistinctCountAggregator(
-                selector,
+                selectors,
                 Sets.newHashSet(),
                 maxNumberOfValues,
                 failOnLimitExceeded
@@ -91,11 +100,11 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     @Override
     @Nonnull
     public AggregatorFactory withName(@Nonnull String newName) {
-        return new ExactDistinctCountAggregatorFactory(newName, getFieldName(), maxNumberOfValues, failOnLimitExceeded);
+        return new ExactDistinctCountAggregatorFactory(newName, getFieldNames(), maxNumberOfValues, failOnLimitExceeded);
     }
 
-    private DimensionSelector makeDimensionSelector(final ColumnSelectorFactory columnFactory) {
-        return columnFactory.makeDimensionSelector(new DefaultDimensionSpec(fieldName, fieldName));
+    private DimensionSelector makeDimensionSelector(final ColumnSelectorFactory columnFactory, String fieldName) {
+        return columnFactory.makeDimensionSelector(DefaultDimensionSpec.of(fieldName));
     }
 
     @Override
@@ -122,7 +131,7 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     @Override
     @Nonnull
     public AggregatorFactory getCombiningFactory() {
-        return new ExactDistinctCountAggregatorFactory(name, fieldName, maxNumberOfValues, failOnLimitExceeded);
+        return new ExactDistinctCountAggregatorFactory(name, fieldNames, maxNumberOfValues, failOnLimitExceeded);
     }
 
     @Override
@@ -140,7 +149,7 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     @Nonnull
     public List<AggregatorFactory> getRequiredColumns() {
         return ImmutableList.of(
-                new ExactDistinctCountAggregatorFactory(fieldName, fieldName, maxNumberOfValues, failOnLimitExceeded)
+                new ExactDistinctCountAggregatorFactory(name, fieldNames, maxNumberOfValues, failOnLimitExceeded)
         );
     }
 
@@ -162,8 +171,8 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     }
 
     @JsonProperty
-    public String getFieldName() {
-        return fieldName;
+    public List<String> getFieldNames() {
+        return ImmutableList.copyOf(fieldNames);
     }
 
     @JsonProperty
@@ -186,12 +195,12 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
     @Override
     @Nonnull
     public List<String> requiredFields() {
-        return Collections.singletonList(fieldName);
+        return this.getFieldNames();
     }
 
     @Override
     public byte[] getCacheKey() {
-        byte[] fieldNameBytes = StringUtils.toUtf8(fieldName);
+        byte[] fieldNameBytes = StringUtils.toUtf8(fieldNames.toString());
         byte[] bitMapFactoryCacheKey = StringUtils.toUtf8(this.getClass().getSimpleName());
         byte[] maxValuesBytes = StringUtils.toUtf8(maxNumberOfValues.toString());
         byte[] failOnLimitExceededBytes = StringUtils.toUtf8(failOnLimitExceeded.toString());
@@ -235,7 +244,7 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
 
         ExactDistinctCountAggregatorFactory that = (ExactDistinctCountAggregatorFactory) o;
 
-        if (!fieldName.equals(that.fieldName)) {
+        if (!fieldNames.equals(that.fieldNames)) {
             return false;
         }
         if (!maxNumberOfValues.equals(that.maxNumberOfValues)) {
@@ -249,16 +258,14 @@ public class ExactDistinctCountAggregatorFactory extends AggregatorFactory {
 
     @Override
     public int hashCode() {
-        int result = name.hashCode();
-        result = 31 * result + fieldName.hashCode() + maxNumberOfValues.hashCode() + failOnLimitExceeded.hashCode();
-        return result;
+        return Objects.hash(fieldNames, maxNumberOfValues, failOnLimitExceeded);
     }
 
     @Override
     public String toString() {
         return "ExactDistinctCountAggregatorFactory{" +
                 "name='" + name + '\'' +
-                ", fieldName='" + fieldName + '\'' +
+                ", fieldNames='" + fieldNames + '\'' +
                 ", maxNumberOfValues=" + maxNumberOfValues +
                 ", failOnLimitExceeded=" + failOnLimitExceeded.toString() +
                 '}';

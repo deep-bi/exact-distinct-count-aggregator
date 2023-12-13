@@ -38,7 +38,7 @@ You can add it to your Druid native query as follows:
     {      
       "type": "exactDistinctCount", 
       "name": "test",                 // name to be displayed
-      "fieldName": "comment",         // field to be counted
+      "fieldNames": ["comment", "cityName"],         // fields to be counted
       "maxNumberOfValues": 5000     
       "failOnLimitExceeded": true    
     }
@@ -53,5 +53,7 @@ You can add it to your Druid native query as follows:
 | `maxNumberOfValues`   | Max number of values to be aggregated                                                                                                  | Positive Integer | 10000   |
 | `failOnLimitExceeded` | Defines behavior on reaching the limit.<br/> `true`: throwing an exception<br/> `false`: logging warning and returning the limit value | Boolean          | `False` |
 
+# Limitations
 
+- Aggregator is not supported in GroupBy queries.
 
