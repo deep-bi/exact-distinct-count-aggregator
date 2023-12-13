@@ -20,28 +20,27 @@ import org.apache.druid.query.aggregation.Aggregator;
 import org.apache.druid.segment.DimensionSelector;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Set;
 
 public class ExactDistinctCountAggregator implements Aggregator {
-
-    private final DimensionSelector selector;
-    private final Set<Object> set;
+    private final List<DimensionSelector> selectors;
+    private final HashcodeRegistry hashcodeRegistry;
     private final Integer maxNumberOfValues;
     private final boolean failOnLimitExceeded;
     private boolean achievedLimit;
-    private static final String NULL = "NULL";
 
 
     public ExactDistinctCountAggregator(
-            DimensionSelector selector,
-            Set<Object> set,
+            List<DimensionSelector> selectors,
+            Set<Integer> set,
             Integer maxNumberOfValues,
             boolean failOnLimitExceeded
     ) {
-        this.selector = selector;
-        this.set = set;
+        this.selectors = selectors;
         this.maxNumberOfValues = maxNumberOfValues;
         this.failOnLimitExceeded = failOnLimitExceeded;
+        this.hashcodeRegistry = new HashcodeRegistry(set);
     }
 
     @Override
@@ -50,8 +49,8 @@ public class ExactDistinctCountAggregator implements Aggregator {
             return;
         }
 
-        if (set.size() >= maxNumberOfValues) {
-            if (set.contains(getCurrentObjectHashCode(selector))) {
+        if (hashcodeRegistry.size() >= maxNumberOfValues) {
+            if (hashcodeRegistry.contains(selectors)) {
                 return;
             }
             if (failOnLimitExceeded) {
@@ -63,17 +62,12 @@ public class ExactDistinctCountAggregator implements Aggregator {
             }
         }
 
-        set.add(getCurrentObjectHashCode(selector));
-
-    }
-
-    public static int getCurrentObjectHashCode(final DimensionSelector selector){
-        return selector.getObject() == null ? NULL.hashCode() : selector.getObject().hashCode();
+        hashcodeRegistry.add(selectors);
     }
 
     @Override
     public Object get() {
-        return set;
+        return hashcodeRegistry.getRegistry();
     }
 
 
